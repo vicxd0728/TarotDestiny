@@ -8,12 +8,10 @@
   <!-- 載入 Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- 載入 React 與 ReactDOM -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  
-  <!-- 載入 Babel 以便在瀏覽器編譯 JSX -->
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- 載入更穩定的 CDN (cdnjs) 來確保 React 與 Babel 不會出現 404 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" crossorigin></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
 
   <!-- 自訂 CSS 動畫 -->
   <style>
@@ -84,7 +82,7 @@
     const MINOR_ARCANA = SUITS.flatMap(s => RANKS.map(r => `${s.zh}${r.zh} (${r.en} of ${s.en})`));
     const FULL_DECK = [...MAJOR_ARCANA, ...MINOR_ARCANA];
 
-    // --- 2. 內建本地塔羅演算法 (取代原本容易卡住的 API) ---
+    // --- 2. 內建本地塔羅演算法 (完全不用 API，確保 0 報錯) ---
     // 根據抽到的牌與正逆位，組合出對應的解讀文本
     const generateLocalReading = async (question, drawnCards, spreadType) => {
       // 模擬神祕的等待時間，讓翻牌動畫能順利播完 (2.5秒)
@@ -192,7 +190,7 @@
         setDrawnCards(selected);
 
         try {
-          // 呼叫本地演算法，永遠不會卡住或報錯
+          // 呼叫本地演算法，完全無 API 連線，保證 100% 成功
           const resultText = await generateLocalReading(question, selected, spread);
           setReading(resultText);
         } catch (err) {
@@ -203,13 +201,17 @@
         }
       };
 
+      // 翻牌動畫邏輯 (強化了 React 狀態更新的穩定度)
       useEffect(() => {
         if (drawnCards.length > 0 && drawnCards.some(c => !c.revealed)) {
           const timer = setTimeout(() => {
             setDrawnCards(prev => {
               const next = [...prev];
               const unrevealedIdx = next.findIndex(c => !c.revealed);
-              if (unrevealedIdx !== -1) next[unrevealedIdx].revealed = true;
+              if (unrevealedIdx !== -1) {
+                // 使用深拷貝確保 React 確實偵測到狀態改變並重新渲染
+                next[unrevealedIdx] = { ...next[unrevealedIdx], revealed: true };
+              }
               return next;
             });
           }, 800);
