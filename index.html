@@ -39,7 +39,7 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    // --- 0. 內建 SVG 圖示庫 (取代原本的 lucide-react 以適應純 HTML 環境) ---
+    // --- 0. 內建 SVG 圖示庫 ---
     const iconPaths = {
       Sparkles: '<path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M3 5h4"/><path d="M19 17v4"/><path d="M17 19h4"/>',
       Moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
@@ -84,72 +84,82 @@
     const MINOR_ARCANA = SUITS.flatMap(s => RANKS.map(r => `${s.zh}${r.zh} (${r.en} of ${s.en})`));
     const FULL_DECK = [...MAJOR_ARCANA, ...MINOR_ARCANA];
 
-    // --- 2. 串接 Gemini API 產生解讀 ---
-    // ⚠️ 請務必在此處填入你申請的 API Key 才能在 GitHub Pages 運作
-    const apiKey = "AIzaSyA0fuwuJh-FKkGj1fUYIF5rcO2B40izv5I"; 
+    // --- 2. 內建本地塔羅演算法 (取代原本容易卡住的 API) ---
+    // 根據抽到的牌與正逆位，組合出對應的解讀文本
+    const generateLocalReading = async (question, drawnCards, spreadType) => {
+      // 模擬神祕的等待時間，讓翻牌動畫能順利播完 (2.5秒)
+      await new Promise(resolve => setTimeout(resolve, 2500));
 
-    async function fetchTarotReading(question, drawnCards, spreadType) {
-      if(!apiKey) {
-        throw new Error("尚未設定 API Key！請至程式碼中填寫。");
-      }
+      let resultText = "";
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-      
-      const cardsText = drawnCards.map((c, i) => 
-        spreadType === 'three' 
-          ? `第 ${i + 1} 張 (${i === 0 ? '過去' : i === 1 ? '現在' : '未來'}): ${c.name} - ${c.isReversed ? '逆位' : '正位'}`
-          : `${c.name} - ${c.isReversed ? '逆位' : '正位'}`
-      ).join('\n');
+      const getCardMeaning = (cardName, isReversed) => {
+        let coreMeaning = "";
+        let actionDo = "";
+        let actionDont = "";
+        let quote = "";
 
-      const systemInstruction = `你是一位專業、充滿智慧且富有同理心的塔羅牌占卜師。
-請嚴格根據以下提供的「使用者問題」與「抽到的牌卡」，進行深度且具體的回應。
-你的語氣應該神祕、溫暖且具有啟發性。
+        // 大阿爾克那解讀
+        if (cardName.match(/愚者|魔術師|女祭司|皇后|皇帝|教皇|戀人|戰車|力量|隱士|命運之輪|正義|倒吊人|死神|節制|惡魔|高塔|星星|月亮|太陽|審判|世界/)) {
+          coreMeaning = isReversed ? "這張大牌逆位暗示著能量的延遲、內在的抗拒，或是你需要重新審視人生方向的重大課題。" : "這張大牌代表著強大的命運推動力、重要的轉折點，以及靈魂層面的深刻啟示。";
+          actionDo = isReversed ? "向內尋求答案，給自己多一點時間沉澱。" : "順應這股強大的能量，勇敢迎接改變。";
+          actionDont = isReversed ? "不要強求外在的結果，避免逆勢而為。" : "不要因為恐懼而退縮，錯失良機。";
+          quote = "命運的軌跡有時隱晦，但一切都在宇宙的安排之中。";
 
-如果抽到 1 張牌，請直接使用以下模板。
-如果抽到 3 張牌（過去、現在、未來），請先簡短總結整體能量，然後為每一張牌分別套用以下模板。
-
-必須遵守的輸出模板格式：
-### 🔮 占卜結果：[牌名] ([正位/逆位])
----
-**【核心牌義】**
-(簡述這張牌在正/逆位時的核心定義與能量特質)
-
-**【針對問題點的深入分析】**
-(結合使用者的問題「${question}」進行具體分析，這張牌在這裡暗示了什麼？)
-
-**【具體的行動建議】**
-* **Do (建議做)：** (提供 1-2 點具體、正向、可執行的行動)
-* **Don't (應避免)：** (指出目前的盲點、風險或不該做的事)
-
-**【靈魂啟示】**
-(給予一句充滿智慧、正能量或警示的一句話總結)
-`;
-
-      const prompt = `使用者的問題是：「${question}」\n抽到的牌是：\n${cardsText}\n請開始你的解讀。`;
-
-      const retries = 5;
-      const delays = [1000, 2000, 4000, 8000, 16000];
-
-      for (let attempt = 0; attempt <= retries; attempt++) {
-        try {
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              systemInstruction: { parts: [{ text: systemInstruction }] }
-            })
-          });
-
-          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-          const data = await response.json();
-          return data.candidates?.[0]?.content?.parts?.[0]?.text || "無法獲取解讀，請稍後再試。";
-        } catch (error) {
-          if (attempt === retries) throw new Error(error.message || "API 請求失敗，已達最大重試次數。");
-          await new Promise(res => setTimeout(res, delays[attempt]));
+          if (cardName.includes("戰車")) {
+             coreMeaning = isReversed ? "方向失控、意志力瓦解、遇到無法預期的阻礙。" : "衝刺、控制、勝利、強大的意志力。";
+          } else if (cardName.includes("死神") || cardName.includes("高塔")) {
+             coreMeaning = isReversed ? "抗拒改變、無法放下過去、逃避必然的崩塌。" : "結束與重生、告別過去、徹底而震撼的轉變。";
+          }
         }
-      }
-    }
+        // 小阿爾克那：權杖 (火元素)
+        else if (cardName.includes("權杖")) {
+          coreMeaning = isReversed ? "行動受阻、熱情消退、計畫延遲、缺乏動力。" : "行動力、熱情、創造力、新計畫的推動。";
+          actionDo = isReversed ? "重新找回初心，休養生息，調整步伐。" : "把握當下的熱情，積極採取行動。";
+          actionDont = isReversed ? "不要勉強推進已經失去動力的事物。" : "不要猶豫不決，錯失良機。";
+          quote = "熱情是點燃生命之火的引信。";
+        }
+        // 小阿爾克那：聖杯 (水元素)
+        else if (cardName.includes("聖杯")) {
+          coreMeaning = isReversed ? "情感失落、人際關係受挫、過度敏感或逃避現實。" : "情感豐富、愛、直覺、和諧的人際關係。";
+          actionDo = isReversed ? "療癒內在的創傷，學會愛自己。" : "敞開心胸，順應情感的流動，表達你的愛。";
+          actionDont = isReversed ? "不要封閉內心，或過度依賴他人。" : "不要忽視直覺帶給你的溫柔訊息。";
+          quote = "愛與被愛，都是靈魂最深的渴望。";
+        }
+        // 小阿爾克那：寶劍 (風元素)
+        else if (cardName.includes("寶劍")) {
+          coreMeaning = isReversed ? "思緒混亂、過度焦慮、言語傷害、無法做出決定。" : "清晰的思考、邏輯、溝通、面對挑戰的勇氣。";
+          actionDo = isReversed ? "放下鑽牛角尖的想法，尋求客觀的建議。" : "保持理智，用清晰的溝通化解問題。";
+          actionDont = isReversed ? "避免在情緒不穩時做出重大決定。" : "不要用尖銳的言語傷害在乎你的人。";
+          quote = "清晰的思緒能斬斷一切迷惘。";
+        }
+        // 小阿爾克那：錢幣 (土元素)
+        else if (cardName.includes("錢幣")) {
+          coreMeaning = isReversed ? "財務壓力、物質匱乏、工作不順、缺乏安全感。" : "財富累積、踏實、穩定、工作與物質的收穫。";
+          actionDo = isReversed ? "重新檢視資源狀況，節流開源，腳踏實地。" : "踏實耕耘，穩健累積資源，享受成果。";
+          actionDont = isReversed ? "避免投機取巧或過度物質主義。" : "不要好高騖遠，忽略了基礎的穩固。";
+          quote = "每一份收穫，都來自腳踏實地的耕耘。";
+        }
+
+        return { coreMeaning, actionDo, actionDont, quote };
+      };
+
+      // 組合最終輸出的 Markdown 文本
+      drawnCards.forEach((card, i) => {
+        const { coreMeaning, actionDo, actionDont, quote } = getCardMeaning(card.name, card.isReversed);
+        const positionName = spreadType === 'three' ? (i === 0 ? "過去" : i === 1 ? "現在" : "未來") : "指引";
+        
+        resultText += `### 🔮 占卜結果：${card.name} (${card.isReversed ? '逆位' : '正位'}) - ${positionName}\n`;
+        resultText += `---\n`;
+        resultText += `**【核心牌義】**\n${coreMeaning}\n\n`;
+        resultText += `**【針對問題點的深入分析】**\n針對你的問題「${question}」，這張牌出現在此處，暗示著相關的能量狀態正受到上述特質的影響。${card.isReversed ? '你可能正遇到一些內在的阻力或盲點，需要放慢腳步來覺察。' : '這是一個清晰的訊號，順應這股能量將有助於你找到突破口。'}\n\n`;
+        resultText += `**【具體的行動建議】**\n`;
+        resultText += `* **Do (建議做)：** ${actionDo}\n`;
+        resultText += `* **Don't (應避免)：** ${actionDont}\n\n`;
+        resultText += `**【靈魂啟示】**\n「${quote}」\n\n`;
+      });
+
+      return resultText;
+    };
 
     // --- 3. 主應用程式元件 ---
     function App() {
@@ -164,10 +174,6 @@
       const handleDrawCards = async () => {
         if (!question.trim()) {
           setError("請先在星盤上刻下你的問題...");
-          return;
-        }
-        if (!apiKey) {
-          setError("開發者提醒：請先在程式碼第 52 行設定你的 Gemini API Key！");
           return;
         }
         setError("");
@@ -186,10 +192,11 @@
         setDrawnCards(selected);
 
         try {
-          const resultText = await fetchTarotReading(question, selected, spread);
+          // 呼叫本地演算法，永遠不會卡住或報錯
+          const resultText = await generateLocalReading(question, selected, spread);
           setReading(resultText);
         } catch (err) {
-          setError(err.message || "宇宙的訊號暫時受到干擾，請重新凝聚意念再試一次。");
+          setError("宇宙的訊號暫時受到干擾，請重新凝聚意念再試一次。");
           console.error(err);
         } finally {
           setIsLoading(false);
